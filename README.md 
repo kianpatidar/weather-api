@@ -1,0 +1,28 @@
+# City Snapshot API
+ 
+A Flask API that fetches live weather and air quality data
+for four cities using the Open-Meteo APIs.
+ 
+Built as part of the QurioSkill Data Pipelines Workshop.
+ 
+## Endpoints
+ 
+| Route                  | Method | Description                        |
+|------------------------|--------|------------------------------------|
+| /cities                | GET    | List supported cities              |
+| /snapshot              | GET    | Full data for all cities           |
+| /snapshot/<city>       | GET    | Data for one city                  |
+ 
+## How to Run
+ 
+```
+pip install -r requirements.txt
+python project2.py
+```
+ 
+Then visit http://localhost:5000/cities in your browser.
+ 
+## Data Sources
+ 
+- Weather: Open-Meteo (open-meteo.com)
+- Air Quality: Open-Meteo Air Quality API
