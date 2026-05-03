@@ -27,7 +27,7 @@ def full_snapshot():
     for city, (lat,lon) in CITIES.items():
         weather_data.append(fetch_weather(city, lat, lon))
         air_data.append(fetch_air_quality(city, lat, lon))
-    
+
     #Normalise both lists
     weather = [normalise_weather(w) for w in weather_data]
     air = [normalise_air_quality(c) for c in  air_data]
@@ -45,9 +45,9 @@ def full_snapshot():
 
 
 #Task 3 — GET /snapshot/<city>
-@app.route('/snapshot/<city>')    
+@app.route('/snapshot/<city>')
 def city_snapshot(city):
-    # normalise the input 
+    # normalise the input
     city_input = city.strip().lower()
 
     units = request.args.get('units', 'celsius')
@@ -59,7 +59,7 @@ def city_snapshot(city):
     for city1, (lat,lon) in CITIES.items():
         weather_data.append(fetch_weather(city1, lat, lon))
         air_data.append(fetch_air_quality(city1, lat, lon))
-    
+
     #Normalise both lists
     weather = [normalise_weather(w) for w in weather_data]
     air = [normalise_air_quality(c) for c in  air_data]
@@ -73,7 +73,7 @@ def city_snapshot(city):
     # check the condition for city
     if city_input not in  df["city_existed"].values:
          return jsonify({'error': 'City not found'}), 404 #error message with 404 code
-    
+
     #pull the requested city
     df = df[df["city_existed"]==city_input]
 
@@ -125,8 +125,9 @@ def city_aqi(city):
     return jsonify({"data": result})
 
 
+@app.route("/")
+def hello_world():
+    return jsonify({"message": "Hello_world"})
+
 if __name__ == '__main__':
     app.run(debug=True)
-        
- 
-
