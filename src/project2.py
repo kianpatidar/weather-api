@@ -1,5 +1,8 @@
 from flask import Flask, jsonify, request
 import pandas as pd
+from database import db
+from models import Snapshot
+from datetime import datetime, timezone
 
 # Import your existing pipeline functions
 from task2 import (
@@ -10,6 +13,19 @@ from task2 import (
 )
 
 app = Flask(__name__)
+
+
+# Point SQLAlchemy at a SQLite file in the project folder
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///weather.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Connect the db object to this app
+db.init_app(app)
+
+# Create the tables if they don't exist yet
+with app.app_context():
+    db.create_all()
+
 
 #Task 1 — GET /cities
 @app.route("/cities")
@@ -38,6 +54,27 @@ def full_snapshot():
     #fix NaN for json
     df = df.where(pd.notnull(df), None)
 
+
+    # --- NEW: save each row to the database ---
+    fetched_at = datetime.now(timezone.utc)
+ 
+    for row in df.to_dict(orient='records'):
+        snapshot = Snapshot(
+            fetched_at        = fetched_at,
+            city              = row['city'],
+            temperature_c     = row.get('temperature_c'),
+            wind_speed_kmh    = row.get('wind_speed_kmh'),
+            weather_code      = row.get('weather_code'),
+            pm10              = row.get('pm10'),
+            pm2_5             = row.get('pm2_5'),
+            air_quality_index = row.get('air_quality_index'),
+        )
+        db.session.add(snapshot)
+ 
+    db.session.commit()
+
+
+    # --- existing return ---
     #Convert the DataFrame to a list of dicts
     result = df.to_dict(orient='records')
 
@@ -123,6 +160,128 @@ def city_aqi(city):
 
     result = df.to_dict(orient="records")
     return jsonify({"data": result})
+
+#----------New endpoints--------
+#Task 5a — GET /history
+#--------------------------------
+
+@app.route('/history')
+def history():
+    # Get the most recent row for each city
+    # Strategy: query all rows, ordered newest first, deduplicate by city
+    rows = (
+        Snapshot.query
+        .order_by(Snapshot.fetched_at.desc())
+        .all()
+    )
+ 
+    # Keep only the first occurrence of each city (i.e. most recent)
+    seen   = set()
+    latest = []
+    for row in rows:
+        if row.city not in seen:
+            seen.add(row.city)
+            latest.append(row.to_dict())
+ 
+    return jsonify({'data': latest, 'count': len(latest)})
+
+
+def validate_city(city):
+
+    city = city.strip().lower()
+
+    valid_cities = [c.lower() for c in CITIES.keys()]
+
+    if city not in valid_cities:
+        return jsonify({
+            "error": f"City '{city}' not supported"
+        }), 404
+
+    return None
+
+def error_response(message, status_code):
+
+    response = jsonify({
+        "error": message
+    })
+
+    response.status_code = status_code
+
+    return response
+
+#----------New endpoints--------
+#Task 5b — GET /history/<city>
+#--------------------------------
+@app.route('/history/<city>')
+def city_history(city):
+    err = validate_city(city)
+    if err:
+        return err
+ 
+    rows = (
+        Snapshot.query
+        .filter(Snapshot.city.ilike(city))   # case-insensitive match
+        .order_by(Snapshot.fetched_at.desc())
+        .all()
+    )
+ 
+    if not rows:
+        return error_response(
+            f'No history found for {city.title()}. Try fetching /snapshot first.',
+            404
+        )
+ 
+    return jsonify({
+        'city':  city.title(),
+        'count': len(rows),
+        'data':  [r.to_dict() for r in rows]
+    })
+
+#----------New endpoints--------
+#Task 5c — GET /history/<city>/summary
+#--------------------------------
+@app.route('/history/<city>/summary')
+def city_summary(city):
+    err = validate_city(city)
+    if err:
+        return err
+ 
+    rows = (
+        Snapshot.query
+        .filter(Snapshot.city.ilike(city))
+        .order_by(Snapshot.fetched_at.asc())
+        .all()
+    )
+ 
+    if not rows:
+        return error_response(
+            f'No history found for {city.title()}.',
+            404
+        )
+ 
+    # Extract non-None values for each metric
+    temps = [r.temperature_c for r in rows if r.temperature_c is not None]
+    aqis  = [r.air_quality_index for r in rows if r.air_quality_index is not None]
+ 
+    summary = {
+        'city':             city.title(),
+        'total_readings':   len(rows),
+        'first_fetched':    rows[0].fetched_at.isoformat(),
+        'last_fetched':     rows[-1].fetched_at.isoformat(),
+        'temperature_c': {
+            'avg': round(sum(temps) / len(temps), 2) if temps else None,
+            'min': min(temps) if temps else None,
+            'max': max(temps) if temps else None,
+        },
+        'air_quality_index': {
+            'avg': round(sum(aqis) / len(aqis), 2) if aqis else None,
+            'min': min(aqis) if aqis else None,
+            'max': max(aqis) if aqis else None,
+        },
+    }
+ 
+    return jsonify(summary)
+
 
 
 if __name__ == '__main__':
